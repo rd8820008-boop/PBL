@@ -1,0 +1,6 @@
+*.o
+*.exe
+*.log
+core_standalone
+logger
+ui_temp
