@@ -1,0 +1,13 @@
+
+===== PROCESS SCHEDULING SIMULATOR =====
+1. FCFS
+2. SJF (non-preemptive)
+3. SRTF
+4. Priority (non-preemptive)
+5. Priority (preemptive)
+6. Round Robin
+7. Run all algorithms
+8. Enter new processes
+9. Use sample data
+0. Exit
+Choice: 
