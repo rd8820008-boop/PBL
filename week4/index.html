@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Deadlock Simulation System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #f3f5f9;
+            color: #222
+        }
+
+        header {
+            background: #1F3864;
+            color: #fff;
+            padding: 14px 24px;
+            font-size: 20px
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            padding: 16px
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 14px;
+            box-shadow: 0 1px 4px #0002
+        }
+
+        h3 {
+            margin: 0 0 8px
+        }
+
+        table {
+            border-collapse: collapse;
+            margin: 4px 0 8px
+        }
+
+        td,
+        th {
+            border: 1px solid #ccc;
+            padding: 2px 4px;
+            text-align: center
+        }
+
+        input[type=number] {
+            width: 46px
+        }
+
+        button {
+            background: #1F3864;
+            color: #fff;
+            border: 0;
+            border-radius: 5px;
+            padding: 7px 12px;
+            margin: 3px;
+            cursor: pointer
+        }
+
+        button.g {
+            background: #2e7d32
+        }
+
+        button.r {
+            background: #c62828
+        }
+
+        button.o {
+            background: #ef6c00
+        }
+
+        #state {
+            font-size: 22px;
+            font-weight: bold;
+            padding: 8px;
+            border-radius: 6px;
+            text-align: center;
+            background: #ddd
+        }
+
+        #state.SAFE {
+            background: #c8e6c9;
+            color: #1b5e20
+        }
+
+        #state.UNSAFE {
+            background: #ffe0b2;
+            color: #e65100
+        }
+
+        #state.DEADLOCKED {
+            background: #ffcdd2;
+            color: #b71c1c
+        }
+
+        #log {
+            height: 140px;
+            overflow: auto;
+            background: #111;
+            color: #9f9;
+            font-family: monospace;
+            padding: 6px;
+            font-size: 13px
+        }
+
+        .bar {
+            background: #ddd;
+            height: 14px;
+            border-radius: 4px;
+            margin: 2px 0 6px
+        }
+
+        .bar div {
+            background: #1F3864;
+            height: 100%;
+            border-radius: 4px
+        }
+    </style>
+</head>
+
+<body>
+    <header>Deadlock Simulation System</header>
+    <main>
+        <div>
+            <div class="card">
+                <h3>1. Create Processes &amp; Resources</h3>
+                Processes <input id="n" type="number" min="1" max="10" value="3">
+                Resource types <input id="m" type="number" min="1" max="10" value="3">
+                <button onclick="create(+$('n').value,+$('m').value)">Create</button><br>
+                <button class="g" onclick="load('safe')">Load SAFE example (5 P, 3 R)</button>
+                <button class="r" onclick="load('dead')">Load DEADLOCK example (2 P, 2 R)</button>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <h3>2. Matrices (edit the values)</h3>
+                <div id="mats">Click Create or load an example.</div>
+                <div id="needDiv"></div>
+            </div>
+        </div>
+        <div>
+            <div class="card">
+                <h3>3. Run Algorithms</h3>
+                <button onclick="analyse()">Run Banker's Algorithm</button>
+                <button class="o" onclick="detect()">Detect Deadlock</button>
+                <button class="r" onclick="recover()">Recover from Deadlock</button>
+                <div id="state">State: -</div>
+                <div id="info" style="margin-top:6px"></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <h3>4. Request Resources</h3>
+                Process <select id="rp"></select> <span id="rq"></span>
+                <button class="g" onclick="doReq()">Request</button>
+                <div style="font-size:12px;color:#555">If a request has to wait or is denied, it is saved as a pending
+                    request (used for deadlock detection and the graph).</div>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <h3>5. Resource Allocation Graph</h3>
+                <div id="rag"></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <h3>6. Resource Utilization</h3>
+                <div id="util"></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <h3>System Log</h3>
+                <div id="log"></div>
+            </div>
+        </div>
+    </main>
+    <script>
+        const $ = id => document.getElementById(id);
+        let S = null;
+        const mk = (n, m) => Array.from({ length: n }, () => Array(m).fill(0));
+        const rng = k => [...Array(k).keys()];
+
+        function create(n, m) {
+            n = Math.min(10, Math.max(1, n)); m = Math.min(10, Math.max(1, m));
+            S = { n, m, available: Array(m).fill(0), alloc: mk(n, m), max: mk(n, m), request: mk(n, m), need: mk(n, m), state: null };
+            renderTables(); log('Created ' + n + ' processes and ' + m + ' resource types');
+        }
+        function load(kind) {
+            if (kind == 'safe') S = { n: 5, m: 3, available: [3, 3, 2], alloc: [[0, 1, 0], [2, 0, 0], [3, 0, 2], [2, 1, 1], [0, 0, 2]], max: [[7, 5, 3], [3, 2, 2], [9, 0, 2], [2, 2, 2], [4, 3, 3]], request: mk(5, 3), need: mk(5, 3) };
+            else S = { n: 2, m: 2, available: [0, 0], alloc: [[1, 0], [0, 1]], max: [[1, 1], [1, 1]], request: [[0, 1], [1, 0]], need: mk(2, 2) };
+            S.state = null; renderTables(); log('Loaded ' + kind + ' example');
+        }
+        function table(title, key, editable) {
+            let h = '<b>' + title + '</b><table><tr><th></th>' + rng(S.m).map(j => '<th>R' + j + '</th>').join('') + '</tr>';
+            for (let i = 0; i < S.n; i++) {
+                h += '<tr><th>P' + i + '</th>';
+                for (let j = 0; j < S.m; j++)
+                    h += editable ? `<td><input type="number" min="0" value="${S[key][i][j]}" oninput="S['${key}'][${i}][${j}]=+this.value;S.state=null;refresh()"></td>` : `<td>${S[key][i][j]}</td>`;
+                h += '</tr>';
+            }
+            return h + '</table>';
+        }
+        function renderTables() {
+            let h = '<b>Available</b><table><tr>' + rng(S.m).map(j => '<th>R' + j + '</th>').join('') + '</tr><tr>' +
+                S.available.map((v, j) => `<td><input type="number" min="0" value="${v}" oninput="S.available[${j}]=+this.value;S.state=null;refresh()"></td>`).join('') + '</tr></table>';
+            h += table('Allocation', 'alloc', 1) + table('Maximum', 'max', 1) + table('Pending Requests (waiting)', 'request', 1);
+            $('mats').innerHTML = h;
+            $('rp').innerHTML = rng(S.n).map(i => `<option value="${i}">P${i}</option>`).join('');
+            $('rq').innerHTML = rng(S.m).map(j => `R${j} <input class="rq" type="number" min="0" value="0">`).join(' ');
+            refresh();
+        }
+        function refresh() {
+            for (let i = 0; i < S.n; i++)for (let j = 0; j < S.m; j++)S.need[i][j] = S.max[i][j] - S.alloc[i][j];
+            $('needDiv').innerHTML = table('Need (Max - Allocation)', 'need', 0);
+            $('state').className = S.state || '';
+            $('state').textContent = 'State: ' + (S.state || '-');
+            $('info').innerHTML = 'Safe sequence: ' + (S.seq && S.seq.length ? S.seq.map(p => 'P' + p).join(' &rarr; ') : 'none') +
+                '<br>Deadlocked processes: ' + (S.dead && S.dead.length ? S.dead.map(p => 'P' + p).join(', ') : 'none');
+            rag(); util();
+        }
+        function rag() {
+            const W = 620, H = 280, py = 60, ry = 220;
+            const px = i => (i + 1) * W / (S.n + 1), rx = j => (j + 1) * W / (S.m + 1);
+            let s = `<svg width="100%" viewBox="0 0 ${W} ${H}"><defs>
+  <marker id="ab" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0L8,4L0,8z" fill="#1565c0"/></marker>
+  <marker id="ao" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0L8,4L0,8z" fill="#ef6c00"/></marker></defs>`;
+            for (let i = 0; i < S.n; i++)for (let j = 0; j < S.m; j++) {
+                if (S.alloc[i][j] > 0) {
+                    const x1 = rx(j) - 5, y1 = ry - 18, x2 = px(i) - 5, y2 = py + 21;
+                    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#1565c0" stroke-width="2" marker-end="url(#ab)"/>
+      <text x="${(x1 + x2) / 2 - 12}" y="${(y1 + y2) / 2}" font-size="12" fill="#1565c0">${S.alloc[i][j]}</text>`;
+                }
+                if (S.request[i][j] > 0) {
+                    const x1 = px(i) + 5, y1 = py + 21, x2 = rx(j) + 5, y2 = ry - 18;
+                    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#ef6c00" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#ao)"/>
+      <text x="${(x1 + x2) / 2 + 6}" y="${(y1 + y2) / 2}" font-size="12" fill="#ef6c00">${S.request[i][j]}</text>`;
+                }
+            }
+            for (let i = 0; i < S.n; i++) {
+                const d = S.dead && S.state == 'DEADLOCKED' && S.dead.includes(i);
+                s += `<circle cx="${px(i)}" cy="${py}" r="20" fill="${d ? '#ef9a9a' : '#bbdefb'}" stroke="${d ? '#b71c1c' : '#1565c0'}" stroke-width="2"/>
+    <text x="${px(i)}" y="${py + 5}" text-anchor="middle" font-size="14" font-weight="bold">P${i}</text>`;
+            }
+            for (let j = 0; j < S.m; j++)
+                s += `<rect x="${rx(j) - 18}" y="${ry - 18}" width="36" height="36" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+    <text x="${rx(j)}" y="${ry + 5}" text-anchor="middle" font-size="14" font-weight="bold">R${j}</text>
+    <text x="${rx(j)}" y="${ry + 34}" text-anchor="middle" font-size="11">free: ${S.available[j]}</text>`;
+            $('rag').innerHTML = s + '</svg><div style="font-size:12px">Blue solid = allocated (R&rarr;P) &middot; Orange dashed = requesting (P&rarr;R) &middot; Red process = deadlocked</div>';
+        }
+        function util() {
+            let h = '';
+            for (let j = 0; j < S.m; j++) {
+                let used = 0; for (let i = 0; i < S.n; i++)used += S.alloc[i][j];
+                const tot = used + S.available[j], pct = tot ? Math.round(100 * used / tot) : 0;
+                h += `R${j}: ${used}/${tot} units in use (${pct}%)<div class="bar"><div style="width:${pct}%"></div></div>`;
+            }
+            $('util').innerHTML = h;
+        }
+        function log(t) { const l = $('log'); l.innerHTML += '&gt; ' + t + '<br>'; l.scrollTop = l.scrollHeight; }
+        async function call(cmd, extra = {}) {
+            if (!S) { log('Create or load a system first'); return null; }
+            const body = { cmd, n: S.n, m: S.m, available: S.available, alloc: S.alloc, max: S.max, request: S.request, ...extra };
+            const r = await fetch('/api', { method: 'POST', body: JSON.stringify(body) });
+            const d = await r.json();
+            if (d.error) { log('ERROR: ' + d.error); return null; }
+            Object.assign(S, { available: d.available, alloc: d.alloc, max: d.max, request: d.request, state: d.state, seq: d.safe_seq, dead: d.deadlocked });
+            renderTables();
+            return d;
+        }
+        async function analyse() {
+            const d = await call('status'); if (!d) return;
+            log(d.state == 'SAFE' ? "Banker's: SAFE. Safe sequence: " + d.safe_seq.map(p => 'P' + p).join(' -> ') :
+                d.state == 'UNSAFE' ? "Banker's: UNSAFE. No safe sequence exists" : "System is DEADLOCKED");
+        }
+        async function detect() {
+            const d = await call('status'); if (!d) return;
+            log(d.deadlocked.length ? 'DEADLOCK detected. Processes: ' + d.deadlocked.map(p => 'P' + p).join(', ') : 'No deadlock detected');
+        }
+        async function recover() {
+            const d = await call('recover'); if (!d) return;
+            log(d.msg + ' | new state: ' + d.state);
+        }
+        async function doReq() {
+            if (!S) { log('Create or load a system first'); return; }
+            const p = +$('rp').value, req = [...document.querySelectorAll('.rq')].map(e => +e.value);
+            const d = await call('request', { p, req }); if (!d) return;
+            log('P' + p + ' requests [' + req.join(',') + '] -> ' + d.msg);
+            if (d.granted == 1) S.request[p] = Array(S.m).fill(0);
+            else if (d.granted == 0) S.request[p] = req;
+            await call('status');
+        }
+        create(3, 3);
+    </script>
+</body>
+
+</html>
