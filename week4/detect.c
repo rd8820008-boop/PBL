@@ -1,4 +1,3 @@
-c
 #include <string.h>
 #include "deadlock.h"
 

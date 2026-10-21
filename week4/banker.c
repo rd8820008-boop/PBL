@@ -36,7 +36,7 @@ int request_resources(System *s, int p, int req[], char *msg) {
     if (!leq(req, s->need[p], s->m)) {
         strcpy(msg, "Error: request exceeds the process's maximum claim (Need)");
         return -1;
-    }n/ 
+    } 
     if (!leq(req, s->available, s->m)) {
         strcpy(msg, "Wait: not enough resources available right now");
         return 0;
