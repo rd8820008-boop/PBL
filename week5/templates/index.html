@@ -72,8 +72,9 @@
         </select></div>
       <button id="run">Run simulation</button>
     </div>
-    <div id="err" role="alert"></div>
-  </section>
+    <button class="ghost" id="rand" type="button" style="margin-top:12px">Random string</button>
+ <div id="err" role="alert"></div>
+ </section>
 
   <div id="results">
     <section class="panel" id="stepPanel">
@@ -99,6 +100,10 @@
 <script>
 const $ = id => document.getElementById(id);
 let data = null, current = 0;
+$("rand").onclick = () => {
+  const n = 12 + Math.floor(Math.random() * 6);
+  $("ref").value = Array.from({length: n}, () => Math.floor(Math.random() * 8)).join(" ");
+};
 
 $("run").onclick = async () => {
   $("err").style.display = "none";
