@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page Replacement Simulator</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --ink:#1b2430; --muted:#5d6b7c; --line:#dde2e8;
+    --hit:#1f8a5b; --hit-bg:#e4f4ec; --fault:#c2410c; --fault-bg:#fdeadd; --accent:#274c77;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#12171d; --panel:#1b232c; --ink:#e8edf3; --muted:#9aa8b8; --line:#2c3743;
+      --hit:#58c796; --hit-bg:#173529; --fault:#f59e6b; --fault-bg:#3a2518; --accent:#8fb4e3;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Segoe UI",system-ui,sans-serif}
+  main{max-width:1000px;margin:0 auto;padding:28px 18px 60px}
+  h1{font-size:1.7rem;margin:0 0 4px}
+  h2{font-size:1.15rem;margin:0 0 12px}
+  .sub{color:var(--muted);margin:0 0 22px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:18px;margin-bottom:18px}
+  .form{display:grid;grid-template-columns:2fr 1fr 1.2fr auto;gap:12px;align-items:end}
+  @media(max-width:760px){.form{grid-template-columns:1fr}}
+  label{display:block;font-size:.88rem;color:var(--muted);margin-bottom:4px}
+  input,select{width:100%;padding:10px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  button{padding:10px 20px;font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:6px;cursor:pointer}
+  @media(prefers-color-scheme:dark){button{color:#12171d}}
+  .ghost{background:transparent;color:var(--accent);border:1px solid var(--line);font-weight:500}
+  #err{display:none;margin-top:12px;padding:10px 12px;border-radius:6px;background:var(--fault-bg);color:var(--fault)}
+  .scroll{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;min-width:420px}
+  th,td{padding:8px 12px;text-align:center;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:.88rem}
+  td.hit{background:var(--hit-bg);color:var(--hit);font-weight:600}
+  td.fault{background:var(--fault-bg);color:var(--fault);font-weight:600}
+  td.new{font-weight:700;text-decoration:underline}
+  .stats{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;color:var(--muted)}
+  .stats b{color:var(--ink)}
+  .best{color:var(--hit);font-weight:700}
+  .bars{display:grid;gap:10px}
+  .bar-row{display:grid;grid-template-columns:80px 1fr 70px;gap:10px;align-items:center}
+  .bar-track{background:var(--bg);border-radius:4px;height:22px;overflow:hidden;border:1px solid var(--line)}
+  .bar{height:100%;background:var(--accent);transition:width .35s}
+  .bar.best{background:var(--hit)}
+  @media(prefers-reduced-motion:reduce){.bar{transition:none}}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .tabs button{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:500}
+  .tabs button[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+  @media(prefers-color-scheme:dark){.tabs button[aria-pressed="true"]{color:#12171d}}
+  #results{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>Page Replacement Simulator</h1>
+  <p class="sub">Compare FIFO, LRU and Optimal on the same reference string.</p>
+
+  <section class="panel">
+    <div class="form">
+      <div><label for="ref">Page-reference string</label>
+        <input id="ref" value="7 0 1 2 0 3 0 4 2 3" placeholder="7 0 1 2 0 3 0 4 2 3"></div>
+      <div><label for="frames">Number of frames</label>
+        <input id="frames" type="number" min="1" value="3"></div>
+      <div><label for="algo">Algorithm</label>
+        <select id="algo">
+          <option value="all">Compare all</option>
+          <option value="fifo">FIFO</option>
+          <option value="lru">LRU</option>
+          <option value="optimal">Optimal</option>
+        </select></div>
+      <button id="run">Run simulation</button>
+    </div>
+    <div id="err" role="alert"></div>
+  </section>
+
+  <div id="results">
+    <section class="panel" id="stepPanel">
+      <h2>Step-by-step simulation</h2>
+      <div class="tabs" id="tabs"></div>
+      <div class="scroll"><table id="stepTable"></table></div>
+      <div class="stats" id="stepStats"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Performance summary</h2>
+      <div class="scroll"><table id="summary"></table></div>
+      <p id="verdict" style="margin:12px 0 0"></p>
+    </section>
+
+    <section class="panel" id="chartPanel">
+      <h2>Page faults by algorithm</h2>
+      <div class="bars" id="bars"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let data = null, current = 0;
+
+$("run").onclick = async () => {
+  $("err").style.display = "none";
+  try {
+    const res = await fetch("/api/simulate", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({reference: $("ref").value, frames: $("frames").value, algorithm: $("algo").value})
+    });
+    const out = await res.json();
+    if (!res.ok) throw new Error(out.error || "Something went wrong.");
+    data = out; current = 0; render();
+  } catch (e) {
+    $("err").textContent = e.message; $("err").style.display = "block"; $("results").style.display = "none";
+  }
+};
+
+function render(){
+  $("results").style.display = "block";
+  // tabs
+  $("tabs").innerHTML = "";
+  data.results.forEach((r, i) => {
+    const b = document.createElement("button");
+    b.textContent = r.name; b.setAttribute("aria-pressed", i === current);
+    b.onclick = () => { current = i; render(); };
+    $("tabs").appendChild(b);
+  });
+  // step table
+  const r = data.results[current];
+  let h = "<tr><th>Page</th>" + Array.from({length:r.frame_count},(_,i)=>`<th>Frame ${i+1}</th>`).join("") + "<th>Status</th></tr>";
+  r.steps.forEach((s, idx) => {
+    const prev = idx ? r.steps[idx-1].frames : [];
+    h += `<tr><td>${s.page}</td>` + s.frames.map((f,i)=>{
+      const isNew = s.status==="Fault" && f===s.page && prev[i]!==f;
+      return `<td${isNew?' class="new"':''}>${f===null?"—":f}</td>`;
+    }).join("") + `<td class="${s.status.toLowerCase()}">${s.status}</td></tr>`;
+  });
+  $("stepTable").innerHTML = h;
+  $("stepStats").innerHTML =
+    `<span>References: <b>${r.total}</b></span><span>Hits: <b>${r.hits}</b></span><span>Faults: <b>${r.faults}</b></span>` +
+    `<span>Hit ratio: <b>${r.hit_ratio}%</b></span><span>Fault ratio: <b>${r.fault_ratio}%</b></span>`;
+  // summary
+  let s = "<tr><th>Algorithm</th><th>Page hits</th><th>Page faults</th><th>Hit ratio</th><th>Fault ratio</th></tr>";
+  data.results.forEach(x => {
+    s += `<tr><td>${x.name}${x.name===data.best?' <span class="best">(best)</span>':''}</td><td>${x.hits}</td><td>${x.faults}</td><td>${x.hit_ratio}%</td><td>${x.fault_ratio}%</td></tr>`;
+  });
+  $("summary").innerHTML = s;
+  const multi = data.results.length > 1;
+  $("verdict").textContent = multi ? `${data.best} gives the fewest page faults for this reference string and frame count.` : "";
+  // chart
+  $("chartPanel").style.display = multi ? "block" : "none";
+  const max = Math.max(...data.results.map(x=>x.faults), 1);
+  $("bars").innerHTML = data.results.map(x =>
+    `<div class="bar-row"><span>${x.name}</span><div class="bar-track"><div class="bar${x.name===data.best?' best':''}" style="width:${x.faults/max*100}%"></div></div><span>${x.faults} faults</span></div>`
+  ).join("");
+}
+</script>
+</body>
+</html>
