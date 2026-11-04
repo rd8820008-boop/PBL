@@ -3,29 +3,19 @@
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+#include <fcntl.h>
 #include "logger_client.h"
 
-#define SOCK_PATH "/tmp/sim_logger.sock"
+#define FIFO_PATH "/tmp/sim_logger.fifo"
 
 static int log_fd = -1;
 
 int log_init(void) {
     signal(SIGPIPE, SIG_IGN);
-    log_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    log_fd = open(FIFO_PATH, O_WRONLY | O_NONBLOCK);
     if (log_fd < 0) return -1;
-
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCK_PATH, sizeof(addr.sun_path) - 1);
-
-    if (connect(log_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(log_fd);
-        log_fd = -1;
-        return -1;
-    }
+    int flags = fcntl(log_fd, F_GETFL);
+    fcntl(log_fd, F_SETFL, flags & ~O_NONBLOCK);
     return 0;
 }
 
